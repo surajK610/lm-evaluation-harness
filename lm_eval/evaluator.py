@@ -37,6 +37,7 @@ def simple_evaluate(
     decontamination_ngrams_path=None,
     write_out: bool = False,
     log_samples: bool = True,
+    predict_only: bool = False,
     gen_kwargs: str = None,
 ):
     """Instantiate and evaluate a model on a list of tasks.
@@ -68,6 +69,8 @@ def simple_evaluate(
         If True, write out an example document and model input for checking task integrity
     :param log_samples: bool
         If True, write out all model outputs and documents for per-sample measurement and post-hoc analysis
+    :param predict_only: bool
+        If true only model outputs will be generated and returned. Metrics will not be evaluated
     :param gen_kwargs: str
         String arguments for model generation
         Ignored for all tasks with loglikelihood output_type
@@ -122,22 +125,32 @@ def simple_evaluate(
     task_dict = lm_eval.tasks.get_task_dict(tasks)
     for task_name in task_dict.keys():
         task_obj = task_dict[task_name]
-        if type(task_obj) == tuple:
+        if isinstance(task_obj, tuple):
             group, task_obj = task_obj
             if task_obj is None:
                 continue
 
-        config = task_obj._config
-        if config["output_type"] == "generate_until" and gen_kwargs is not None:
-            config["generation_kwargs"].update(gen_kwargs)
+        if task_obj.get_config("output_type") == "generate_until":
+            if gen_kwargs is not None:
+                task_obj.override_config(
+                    key="generation_kwargs", value=gen_kwargs, update=True
+                )
+
+            if predict_only:
+                log_samples = True
+                eval_logger.info(
+                    f"Processing {task_name} in output-only mode. Metrics will not be calculated!"
+                )
+                # we have to change the class properties post-hoc. This is pretty hacky.
+                task_obj.override_metric(metric_name="bypass")
 
         if num_fewshot is not None:
-            if config["num_fewshot"] == 0:
+            if (default_num_fewshot := task_obj.get_config("num_fewshot")) == 0:
                 eval_logger.info(
                     f"num_fewshot has been set to 0 for {task_name} in its config. Manual configuration will be ignored."
                 )
             else:
-                default_num_fewshot = config["num_fewshot"]
+                task_obj.override_config(key="num_fewshot", value=num_fewshot)
                 eval_logger.warning(
                     f"Overwriting default num_fewshot of {task_name} from {default_num_fewshot} to {num_fewshot}"
                 )
@@ -212,7 +225,14 @@ def evaluate(
     """
 
     # decontaminate = decontamination_ngrams_path is not None
-
+    for task_name, task in task_dict.items():
+        if type(task) == tuple:
+            _, task = task
+        if not log_samples:
+            assert (
+                "bypass" not in getattr(task, "_metric_fn_list", {}).keys()
+            ), f"log_samples must be True for 'bypass' only tasks: {task_name}"
+            
     # stores the final result for each task, for each metric/filter pair.
     results = collections.defaultdict(dict)
     # Tracks each task's version.
@@ -469,7 +489,8 @@ def evaluate(
         if bool(results):
             for group, task_list in reversed(task_hierarchy.items()):
                 if task_list == []:
-                    total_size = results[group]["samples"]
+                     # TODO: No samples when bypass
+                    total_size = results[group].get("samples", 999)
                 else:
                     total_size = 0
 

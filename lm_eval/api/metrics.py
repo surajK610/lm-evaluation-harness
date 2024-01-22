@@ -24,6 +24,9 @@ def mean(arr):
 def median(arr):
     return arr[len(arr) // 2]
 
+@register_aggregation("bypass")
+def bypass_agg(arr):
+    return 999
 
 # Certain metrics must be calculated across all documents in a benchmark.
 # We use them as aggregation metrics, paired with no-op passthrough metric fns.
@@ -206,6 +209,15 @@ def sample_stddev(arr):
 def mean_stderr(arr):
     return sample_stddev(arr) / math.sqrt(len(arr))
 
+
+@register_metric(
+    metric="bypass",
+    higher_is_better=True,
+    output_type=["loglikelihood", "multiple_choice", "generate_until"],
+    aggregation="bypass",
+)
+def bypass(items):
+    return None
 
 @register_metric(
     metric="mcc",
