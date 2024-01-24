@@ -14,5 +14,8 @@ doc_to_target: target
 
 task: pink-elephant-eval
 
+generation_kwargs: 
+  until: ["\n\n", "</s>"]
+  
 metric_list:
   - metric: bypass
