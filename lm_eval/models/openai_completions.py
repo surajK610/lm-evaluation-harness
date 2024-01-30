@@ -64,7 +64,7 @@ def oa_completion(**kwargs):
         on_exception_callback=_exception_callback,
     )
     def completion():
-        return openai.completions.create(**kwargs)
+        return openai.chat.completions.create(**kwargs)
 
     return completion()
 
@@ -201,7 +201,8 @@ class OpenaiCompletionsLM(LM):
 
                 inps.append(inp)
                 ctxlens.append(ctxlen)
-
+                
+            
             response = oa_completion(
                 model=self.model,
                 prompt=inps,
@@ -459,7 +460,7 @@ class OpenaiChatCompletionsLM(LM):
                     raise ValueError(
                         f"Expected repr(kwargs) to be of type repr(dict) but got {kwargs}"
                     )
-
+                # print("KWARGS", kwargs, "MESSSAGES", inps)
                 response = oa_chat_completion(
                     client=self.client, messages=inps, model=self.model, **kwargs
                 )
