@@ -358,6 +358,25 @@ def oa_chat_completion(client, **kwargs):
 
     return completion()
 
+def gpt_split(context):
+    """Split context into GPT-3 sized chunks"""
+    output = []
+    system_prompt = context.split("### System: ")[-1].split("\n")[0]
+    rest = context.split("### System: ")[-1].split("\n")[1:]
+    rest = "\n".join(rest).strip()
+    output.append({"role": "system", "content": system_prompt})
+    for line in rest.split("\n"):
+        if len(line) > 0:
+            if "USER:" in line:
+                output.append({"role": "user", "content": line.split("USER:")[-1].strip()})
+            elif "AGENT:" == line:
+                continue
+            elif "AGENT:" in line:
+                output.append({"role": "assistant", "content": line.split("AGENT:")[-1].strip()})
+            else:
+                raise ValueError("Context must contain USER: or AGENT: to split into GPT-3 sized chunks")
+    return output
+    
 
 @register_model("openai-chat-completions", "local-chat-completions")
 class OpenaiChatCompletionsLM(LM):
@@ -439,7 +458,11 @@ class OpenaiChatCompletionsLM(LM):
             chunks = utils.chunks(re_ord.get_reordered(), n=1)
             for chunk in chunks:
                 contexts, all_gen_kwargs = zip(*chunk)
-                inps = [{"role": "user", "content": context} for context in contexts]
+                assert len(contexts) == 1, "GPT Parsing chat completion only supports batch size of 1"
+                try:
+                    inps = gpt_split(contexts[0])
+                except ValueError as e:
+                    inps =[{"role": "user", "content": contexts[0]}]
 
                 gen_kwargs = all_gen_kwargs[0]
                 until = None
@@ -460,14 +483,14 @@ class OpenaiChatCompletionsLM(LM):
                     raise ValueError(
                         f"Expected repr(kwargs) to be of type repr(dict) but got {kwargs}"
                     )
-                # print("KWARGS", kwargs, "MESSSAGES", inps)
+                print("KWARGS", kwargs, "MESSSAGES", inps)
                 response = oa_chat_completion(
                     client=self.client, messages=inps, model=self.model, **kwargs
                 )
 
                 for resp, (context, args_) in zip(response.choices, chunk):
                     s = resp.message.content
-
+                    print(s)
                     if until is not None:
                         for term in until:
                             if len(term) > 0:
