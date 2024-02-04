@@ -1,8 +1,9 @@
-dataset_path: /users/sanand14/data/sanand14/pink-elephant-rlhf/eval/data
+dataset_path: /users/sanand14/data/sanand14/pink-elephant-rlhf/eval/data/data_cleaned
 dataset_kwargs:
   data_files:
-    train: train-00000-of-00001-253877e7185f23bf.parquet
-    test: test-00000-of-00001-2cd6a59c19c454e2.parquet
+    train: train-00000-of-00001.parquet
+    test: test-00000-of-00001.parquet
+    val: val-00000-of-00001.parquet
 training_split: train
 validation_split: null
 test_split: test
@@ -15,7 +16,7 @@ doc_to_target: target
 task: pink-elephant-eval
 
 generation_kwargs: 
-  until: ["<|endoftext|>"]
+  until: ["<|endoftext|>", "</s>"]
   #["\n\n", "</s>"]
   
 metric_list:
