@@ -64,10 +64,14 @@ def oa_completion(client, chat: bool = False, **kwargs):
         on_exception_callback=_exception_callback,
     )
     def completion():
+<<<<<<< HEAD
         if chat:
             return client.chat.completions.create(**kwargs)
         else:
             return client.completions.create(**kwargs)
+=======
+        return openai.chat.completions.create(**kwargs)
+>>>>>>> 9c6078f63852b2c2e81ec5b2d597f869717c83c6
 
     return completion()
 
@@ -234,7 +238,8 @@ class OpenaiCompletionsLM(LM):
 
                 inps.append(inp)
                 ctxlens.append(ctxlen)
-
+                
+            
             response = oa_completion(
                 client=self.client,
                 model=self.model,
@@ -364,6 +369,54 @@ class OpenaiCompletionsLM(LM):
         return loglikelihoods
 
 
+def oa_chat_completion(client, **kwargs):
+    """Query OpenAI API for chat completion.
+
+    Retry with back-off until they respond
+    """
+    if not find_spec("openai") or not find_spec("tiktoken"):
+        raise Exception(
+            "attempted to use 'openai' LM type, but package `openai` or `tiktoken` are not installed. "
+            "Please install these via `pip install lm-eval[openai]` or `pip install -e .[openai]`"
+        )
+    else:
+        import openai
+
+    def _exception_callback(e: Exception, sleep_time: float) -> None:
+        import traceback
+
+        traceback.print_exc()
+
+    @retry_on_specific_exceptions(
+        on_exceptions=[openai.OpenAIError],
+        max_retries=None,  # retry forever, consider changing
+        on_exception_callback=_exception_callback,
+    )
+    def completion():
+        return client.chat.completions.create(**kwargs)
+
+    return completion()
+
+def gpt_split(context):
+    """Split context into GPT-3 sized chunks"""
+    output = []
+    system_prompt = context.split("### System: ")[-1].split("\n")[0]
+    rest = context.split("### System: ")[-1].split("\n")[1:]
+    rest = "\n".join(rest).strip()
+    output.append({"role": "system", "content": system_prompt})
+    for line in rest.split("\n"):
+        if len(line) > 0:
+            if "USER:" in line:
+                output.append({"role": "user", "content": line.split("USER:")[-1].strip()})
+            elif "AGENT:" == line:
+                continue
+            elif "AGENT:" in line:
+                output.append({"role": "assistant", "content": line.split("AGENT:")[-1].strip()})
+            else:
+                raise ValueError("Context must contain USER: or AGENT: to split into GPT-3 sized chunks")
+    return output
+    
+
 @register_model("openai-chat-completions", "local-chat-completions")
 class OpenaiChatCompletionsLM(LM):
     def __init__(
@@ -444,7 +497,11 @@ class OpenaiChatCompletionsLM(LM):
             chunks = utils.chunks(re_ord.get_reordered(), n=1)
             for chunk in chunks:
                 contexts, all_gen_kwargs = zip(*chunk)
-                inps = [{"role": "user", "content": context} for context in contexts]
+                assert len(contexts) == 1, "GPT Parsing chat completion only supports batch size of 1"
+                try:
+                    inps = gpt_split(contexts[0])
+                except ValueError as e:
+                    inps =[{"role": "user", "content": contexts[0]}]
 
                 gen_kwargs = all_gen_kwargs[0]
                 until = None
@@ -466,17 +523,15 @@ class OpenaiChatCompletionsLM(LM):
                         f"Expected repr(kwargs) to be of type repr(dict) but got {kwargs}"
                     )
 
-                response = oa_completion(
+                response = oa_chat_completion(
                     client=self.client,
-                    chat=True,
                     messages=inps,
                     model=self.model,
                     **kwargs,
                 )
-
                 for resp, (context, args_) in zip(response.choices, chunk):
                     s = resp.message.content
-
+                    print(s)
                     if until is not None:
                         for term in until:
                             if len(term) > 0:
